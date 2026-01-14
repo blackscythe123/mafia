@@ -96,9 +96,25 @@ class _LobbyScreenNewState extends State<LobbyScreenNew> {
     Navigator.popUntil(context, (route) => route.isFirst);
   }
 
+  // Generate QR data string
+  // Format: ip:port|pin (pin only for private rooms)
+  String _generateQrData(String ip, int port, String? pin) {
+    final baseData = '$ip:$port';
+    if (pin != null && pin.isNotEmpty) {
+      return '$baseData|$pin';
+    }
+    return baseData;
+  }
+
   // Show QR code dialog for sharing host IP
   void _showQrDialog(String ip) {
     final qrKey = GlobalKey();
+    final manager = context.read<GameManager>();
+    final port = 41235; // Default TCP port
+    final pin = manager.roomPin;
+    final isPrivate = manager.isRoomPrivate;
+    final qrData = _generateQrData(ip, port, pin);
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -106,6 +122,22 @@ class _LobbyScreenNewState extends State<LobbyScreenNew> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (isPrivate) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.lock, color: AppColors.warning, size: 16),
+                  const SizedBox(width: 6),
+                  Text(
+                    'PRIVATE ROOM',
+                    style: AppTextStyles.labelSmall.copyWith(
+                      color: AppColors.warning,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+            ],
             RepaintBoundary(
               key: qrKey,
               child: SizedBox(
@@ -113,7 +145,7 @@ class _LobbyScreenNewState extends State<LobbyScreenNew> {
                 height: 200,
                 child: BarcodeWidget(
                   barcode: Barcode.qrCode(),
-                  data: ip,
+                  data: qrData,
                   width: 200,
                   height: 200,
                   color: AppColors.textPrimary,
@@ -122,7 +154,40 @@ class _LobbyScreenNewState extends State<LobbyScreenNew> {
               ),
             ),
             const SizedBox(height: 16),
-            Text('Scan this QR to join: $ip', style: AppTextStyles.bodyMedium),
+            Text('Scan this QR to join', style: AppTextStyles.bodyMedium),
+            const SizedBox(height: 8),
+            Text(
+              ip,
+              style: AppTextStyles.labelSmall.copyWith(
+                color: AppColors.textMuted,
+              ),
+            ),
+            if (isPrivate && pin != null) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.warning.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.warning.withOpacity(0.3)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.key, size: 14, color: AppColors.warning),
+                    const SizedBox(width: 6),
+                    Text(
+                      'PIN: $pin',
+                      style: AppTextStyles.titleMedium.copyWith(
+                        color: AppColors.warning,
+                        letterSpacing: 4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -136,7 +201,7 @@ class _LobbyScreenNewState extends State<LobbyScreenNew> {
                   label: const Text('SHARE'),
                   onPressed: () async {
                     Navigator.pop(context);
-                    await _shareQr(qrKey, ip);
+                    await _shareQr(qrKey, ip, pin: pin, isPrivate: isPrivate);
                   },
                 ),
               ],
@@ -147,7 +212,8 @@ class _LobbyScreenNewState extends State<LobbyScreenNew> {
     );
   }
 
-  Future<void> _shareQr(GlobalKey key, String ip) async {
+  Future<void> _shareQr(GlobalKey key, String ip,
+      {String? pin, bool isPrivate = false}) async {
     try {
       final boundary =
           key.currentContext?.findRenderObject() as RenderRepaintBoundary?;
@@ -162,8 +228,12 @@ class _LobbyScreenNewState extends State<LobbyScreenNew> {
       final dir = await getTemporaryDirectory();
       final file = File('${dir.path}/mafia_qr.png');
       await file.writeAsBytes(bytes);
-      await Share.shareXFiles([XFile(file.path)],
-          text: 'Join my Mafia room: $ip');
+
+      final shareText = isPrivate && pin != null
+          ? 'Join my Mafia room: $ip (PIN: $pin)'
+          : 'Join my Mafia room: $ip';
+
+      await Share.shareXFiles([XFile(file.path)], text: shareText);
     } catch (e) {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('Share failed: $e')));
@@ -276,17 +346,20 @@ class _LobbyScreenNewState extends State<LobbyScreenNew> {
                                   const Icon(Icons.lan,
                                       size: 14, color: AppColors.textMuted),
                                   const SizedBox(width: 4),
-                                  Text(
-                                    'IP: ${manager.hostIp}',
-                                    style: AppTextStyles.labelSmall.copyWith(
-                                      color: AppColors.textMuted,
-                                      fontSize: 10,
+                                  Flexible(
+                                    child: Text(
+                                      'IP: ${manager.hostIp}',
+                                      overflow: TextOverflow.ellipsis,
+                                      style: AppTextStyles.labelSmall.copyWith(
+                                        color: AppColors.textMuted,
+                                        fontSize: 10,
+                                      ),
                                     ),
                                   ),
                                   const SizedBox(width: 4),
                                   const Icon(Icons.copy,
                                       size: 12, color: AppColors.textMuted),
-                                  const SizedBox(width: 8),
+                                  const SizedBox(width: 4),
                                   IconButton(
                                     padding: EdgeInsets.zero,
                                     constraints: const BoxConstraints(),

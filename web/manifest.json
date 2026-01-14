@@ -1,6 +1,6 @@
 {
-    "name": "mafia_game",
-    "short_name": "mafia_game",
+    "name": "Omerta",
+    "short_name": "Omerta",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

@@ -7,6 +7,7 @@ class RoomTile extends StatelessWidget {
   final int playerCount;
   final int maxPlayers;
   final bool isInProgress;
+  final bool isPrivate; // Show lock icon for private rooms
   final VoidCallback? onJoin;
 
   const RoomTile({
@@ -16,6 +17,7 @@ class RoomTile extends StatelessWidget {
     required this.playerCount,
     this.maxPlayers = 10,
     this.isInProgress = false,
+    this.isPrivate = false,
     this.onJoin,
   });
 
@@ -33,30 +35,72 @@ class RoomTile extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              color: isInProgress
-                  ? AppColors.warning.withOpacity(0.1)
-                  : AppColors.primary.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Icon(
-              isInProgress ? Icons.play_circle_outline : Icons.wifi_tethering,
-              color: isInProgress ? AppColors.warning : AppColors.primary,
-              size: 26,
-            ),
+          Stack(
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: isInProgress
+                      ? AppColors.warning.withOpacity(0.1)
+                      : AppColors.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  isInProgress
+                      ? Icons.play_circle_outline
+                      : Icons.wifi_tethering,
+                  color: isInProgress ? AppColors.warning : AppColors.primary,
+                  size: 26,
+                ),
+              ),
+              // Lock indicator for private rooms
+              if (isPrivate)
+                Positioned(
+                  right: -2,
+                  bottom: -2,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: AppColors.card,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: AppColors.warning,
+                        width: 1.5,
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.lock,
+                      size: 10,
+                      color: AppColors.warning,
+                    ),
+                  ),
+                ),
+            ],
           ),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  roomName.toUpperCase(),
-                  style: AppTextStyles.titleMedium,
-                  overflow: TextOverflow.ellipsis,
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        roomName.toUpperCase(),
+                        style: AppTextStyles.titleMedium,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (isPrivate) ...[
+                      const SizedBox(width: 6),
+                      const Icon(
+                        Icons.lock,
+                        size: 14,
+                        color: AppColors.warning,
+                      ),
+                    ],
+                  ],
                 ),
                 const SizedBox(height: 4),
                 Row(

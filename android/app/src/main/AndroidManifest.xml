@@ -13,7 +13,7 @@
     <uses-permission android:name="android.permission.CAMERA" />
     
     <application
-        android:label="mafia_game"
+        android:label="Omerta"
         android:icon="@mipmap/ic_launcher">
         <activity
             android:name=".MainActivity"

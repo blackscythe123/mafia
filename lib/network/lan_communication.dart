@@ -20,6 +20,7 @@ class RoomInfo {
   final int playerCount;
   final int maxPlayers;
   final bool inProgress;
+  final bool isPrivate; // Whether the room requires a PIN to join
 
   RoomInfo({
     required this.hostId,
@@ -30,8 +31,35 @@ class RoomInfo {
     required this.playerCount,
     this.maxPlayers = 10,
     this.inProgress = false,
+    this.isPrivate = false,
   });
 
+  /// Create a copy with updated fields
+  RoomInfo copyWith({
+    String? hostId,
+    String? hostName,
+    String? roomName,
+    String? hostIp,
+    int? hostPort,
+    int? playerCount,
+    int? maxPlayers,
+    bool? inProgress,
+    bool? isPrivate,
+  }) {
+    return RoomInfo(
+      hostId: hostId ?? this.hostId,
+      hostName: hostName ?? this.hostName,
+      roomName: roomName ?? this.roomName,
+      hostIp: hostIp ?? this.hostIp,
+      hostPort: hostPort ?? this.hostPort,
+      playerCount: playerCount ?? this.playerCount,
+      maxPlayers: maxPlayers ?? this.maxPlayers,
+      inProgress: inProgress ?? this.inProgress,
+      isPrivate: isPrivate ?? this.isPrivate,
+    );
+  }
+
+  /// Note: PIN is NOT included in JSON - it stays on host only
   Map<String, dynamic> toJson() => {
         'hostId': hostId,
         'hostName': hostName,
@@ -41,6 +69,7 @@ class RoomInfo {
         'playerCount': playerCount,
         'maxPlayers': maxPlayers,
         'inProgress': inProgress,
+        'isPrivate': isPrivate,
       };
 
   factory RoomInfo.fromJson(Map<String, dynamic> json) => RoomInfo(
@@ -52,6 +81,7 @@ class RoomInfo {
         playerCount: json['playerCount'] ?? 0,
         maxPlayers: json['maxPlayers'] ?? 10,
         inProgress: json['inProgress'] ?? false,
+        isPrivate: json['isPrivate'] ?? false,
       );
 
   @override
@@ -99,6 +129,9 @@ class LANCommunication implements GameCommunication {
   final Map<String, DateTime> _roomLastSeen = {};
   bool _isConnected = false;
 
+  // Private room PIN (stored only on host, never broadcast)
+  String? _roomPin;
+
   // Message buffer for TCP
   final Map<Socket, String> _socketBuffers = {};
 
@@ -141,8 +174,16 @@ class LANCommunication implements GameCommunication {
 
   // ============ HOST FUNCTIONS ============
 
+  /// Start hosting a room
+  /// [isPrivate] - if true, requires PIN to join
+  /// [pin] - 4-digit PIN for private rooms (stored locally, never broadcast)
   Future<bool> startHosting(
-      String roomName, String playerName, String playerId) async {
+    String roomName,
+    String playerName,
+    String playerId, {
+    bool isPrivate = false,
+    String? pin,
+  }) async {
     if (!isHost) return false;
     if (kIsWeb) {
       print('[LAN] Web platform does not support socket-based networking');
@@ -152,6 +193,7 @@ class LANCommunication implements GameCommunication {
     hostId = playerId;
     localPlayerId = playerId;
     localPlayerName = playerName;
+    _roomPin = isPrivate ? pin : null;
 
     try {
       // Start TCP server first
@@ -178,6 +220,7 @@ class LANCommunication implements GameCommunication {
         hostIp: localIp,
         hostPort: tcpPort,
         playerCount: 1,
+        isPrivate: isPrivate,
       );
 
       // Start UDP broadcast
@@ -187,7 +230,7 @@ class LANCommunication implements GameCommunication {
 
       _isConnected = true;
       print(
-          '[LAN] Hosting started: ${_currentRoom!.roomName} at $localIp:$tcpPort');
+          '[LAN] Hosting started: ${_currentRoom!.roomName} at $localIp:$tcpPort (private: $isPrivate)');
       return true;
     } catch (e) {
       print('[LAN] Error starting host: $e');
@@ -195,6 +238,12 @@ class LANCommunication implements GameCommunication {
       return false;
     }
   }
+
+  /// Get the room PIN (for QR code generation by host only)
+  String? get roomPin => _roomPin;
+
+  /// Check if current room is private
+  bool get isRoomPrivate => _currentRoom?.isPrivate ?? false;
 
   void _startBroadcasting() {
     _broadcastTimer?.cancel();
@@ -250,15 +299,9 @@ class LANCommunication implements GameCommunication {
 
   void updateRoomInfo({int? playerCount, bool? inProgress}) {
     if (_currentRoom != null) {
-      _currentRoom = RoomInfo(
-        hostId: _currentRoom!.hostId,
-        hostName: _currentRoom!.hostName,
-        roomName: _currentRoom!.roomName,
-        hostIp: _currentRoom!.hostIp,
-        hostPort: _currentRoom!.hostPort,
-        playerCount: playerCount ?? _currentRoom!.playerCount,
-        maxPlayers: _currentRoom!.maxPlayers,
-        inProgress: inProgress ?? _currentRoom!.inProgress,
+      _currentRoom = _currentRoom!.copyWith(
+        playerCount: playerCount,
+        inProgress: inProgress,
       );
     }
   }
@@ -303,6 +346,7 @@ class LANCommunication implements GameCommunication {
       case 'join_request':
         final playerId = message['playerId'] as String;
         final playerName = message['playerName'] as String;
+        final providedPin = message['pin'] as String?;
 
         // Check if game in progress
         if (_currentRoom?.inProgress == true) {
@@ -322,6 +366,18 @@ class LANCommunication implements GameCommunication {
           });
           socket.close();
           return;
+        }
+
+        // Validate PIN for private rooms
+        if (_currentRoom?.isPrivate == true && _roomPin != null) {
+          if (providedPin == null || providedPin != _roomPin) {
+            _sendToSocket(socket, {
+              'type': 'join_rejected',
+              'reason': 'Invalid PIN',
+            });
+            socket.close();
+            return;
+          }
         }
 
         // Accept the player
@@ -517,8 +573,9 @@ class LANCommunication implements GameCommunication {
   }
 
   /// Join a room by IP address directly (fallback when UDP discovery fails)
+  /// [pin] is required for private rooms
   Future<bool> joinByIp(String ip, String playerId, String playerName,
-      {int port = tcpPort}) async {
+      {int port = tcpPort, String? pin, bool isPrivate = false}) async {
     if (isHost) return false;
 
     // Create a temporary RoomInfo for direct connection
@@ -529,13 +586,16 @@ class LANCommunication implements GameCommunication {
       hostIp: ip,
       hostPort: port,
       playerCount: 1,
+      isPrivate: isPrivate,
     );
 
-    return joinRoom(room, playerId, playerName);
+    return joinRoom(room, playerId, playerName, pin: pin);
   }
 
-  Future<bool> joinRoom(
-      RoomInfo room, String playerId, String playerName) async {
+  /// Join a discovered room
+  /// [pin] is required for private rooms
+  Future<bool> joinRoom(RoomInfo room, String playerId, String playerName,
+      {String? pin}) async {
     if (isHost) return false;
 
     localPlayerId = playerId;
@@ -562,12 +622,16 @@ class LANCommunication implements GameCommunication {
         },
       );
 
-      // Send join request
-      _sendToSocket(_hostSocket!, {
+      // Send join request (include PIN for private rooms)
+      final joinRequest = <String, dynamic>{
         'type': 'join_request',
         'playerId': playerId,
         'playerName': playerName,
-      });
+      };
+      if (pin != null && pin.isNotEmpty) {
+        joinRequest['pin'] = pin;
+      }
+      _sendToSocket(_hostSocket!, joinRequest);
 
       // Wait for acceptance (with timeout)
       final completer = Completer<bool>();

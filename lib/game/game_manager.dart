@@ -945,8 +945,17 @@ class GameManager extends ChangeNotifier {
   /// Get current room name
   String? get currentRoomName => _currentRoomName;
 
+  /// Check if current room is private
+  bool get isRoomPrivate => _lanComm?.isRoomPrivate ?? false;
+
+  /// Get room PIN (for host to share)
+  String? get roomPin => _lanComm?.roomPin;
+
   /// Initialize LAN hosting
-  Future<bool> createLANRoom(String playerName, String roomName) async {
+  /// [isPrivate] - if true, room requires PIN to join
+  /// [pin] - 4-digit PIN for private rooms
+  Future<bool> createLANRoom(String playerName, String roomName,
+      {bool isPrivate = false, String? pin}) async {
     _resetGame();
     mode = GameMode.offlineP2P;
     _isHost = true;
@@ -981,9 +990,14 @@ class GameManager extends ChangeNotifier {
       notifyListeners();
     };
 
-    // Start hosting
-    final success =
-        await _lanComm!.startHosting(roomName, playerName, playerId);
+    // Start hosting with privacy settings
+    final success = await _lanComm!.startHosting(
+      roomName,
+      playerName,
+      playerId,
+      isPrivate: isPrivate,
+      pin: pin,
+    );
     if (!success) {
       _lanComm = null;
       _comm = null;
@@ -1033,7 +1047,9 @@ class GameManager extends ChangeNotifier {
   }
 
   /// Join a discovered LAN room
-  Future<bool> joinLANRoom(RoomInfo room, String playerName) async {
+  /// [pin] is required for private rooms
+  Future<bool> joinLANRoom(RoomInfo room, String playerName,
+      {String? pin}) async {
     _resetGame();
     mode = GameMode.offlineP2P;
     _isHost = false;
@@ -1071,8 +1087,9 @@ class GameManager extends ChangeNotifier {
     // Attach receiver before joining
     attachReceiver(_lanComm!);
 
-    // Join the room
-    final success = await _lanComm!.joinRoom(room, playerId, playerName);
+    // Join the room with optional PIN
+    final success =
+        await _lanComm!.joinRoom(room, playerId, playerName, pin: pin);
     if (!success) {
       _lanComm = null;
       _comm = null;
@@ -1084,8 +1101,9 @@ class GameManager extends ChangeNotifier {
   }
 
   /// Join a LAN room by IP address directly (fallback when discovery fails)
+  /// [pin] is required for private rooms
   Future<bool> joinLANRoomByIp(String ip, String playerName,
-      {int port = 41235}) async {
+      {int port = 41235, String? pin, bool isPrivate = false}) async {
     _resetGame();
     mode = GameMode.offlineP2P;
     _isHost = false;
@@ -1118,9 +1136,15 @@ class GameManager extends ChangeNotifier {
 
     attachReceiver(_lanComm!);
 
-    // Join by IP directly
-    final success =
-        await _lanComm!.joinByIp(ip, playerId, playerName, port: port);
+    // Join by IP directly with optional PIN
+    final success = await _lanComm!.joinByIp(
+      ip,
+      playerId,
+      playerName,
+      port: port,
+      pin: pin,
+      isPrivate: isPrivate,
+    );
     if (!success) {
       _lanComm = null;
       _comm = null;

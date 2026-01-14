@@ -24,26 +24,20 @@ class HomeScreenNew extends StatelessWidget {
             child: Column(
               children: [
                 const Spacer(flex: 2),
-                Container(
-                  width: 100,
-                  height: 100,
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.1),
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                        color: AppColors.primary.withOpacity(0.3), width: 2),
-                  ),
-                  child: const Icon(
-                    Icons.visibility_off,
-                    size: 48,
-                    color: AppColors.primary,
-                  ),
-                ),
-                const SizedBox(height: 32),
+                Center(
+  child: Image.asset(
+    'assets/images/icon.png',
+    width: 100,
+    height: 100,
+    fit: BoxFit.contain,
+  ),
+),
+
+                const SizedBox(height: 5),
                 Text(
-                  'MAFIA',
+                  'Omertà',
                   style: AppTextStyles.displayLarge.copyWith(
-                    letterSpacing: 12,
+                    letterSpacing: 10,
                   ),
                 ),
                 const SizedBox(height: 8),

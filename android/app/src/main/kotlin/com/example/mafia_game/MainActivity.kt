@@ -1,4 +1,4 @@
-package com.example.mafia_game
+package com.example.Omerta
 
 import io.flutter.embedding.android.FlutterActivity
 
